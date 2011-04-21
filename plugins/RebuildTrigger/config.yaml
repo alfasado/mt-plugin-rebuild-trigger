@@ -1,19 +1,27 @@
 id  : RebuildTrigger
 key : rebuildtrigger
 name: Rebuild Trigger
-version: 0.1
+version: 0.2
 author_name: Alfasado Inc.
 author_link: http://alfasado.net/
 l10n_class: RebuildTrigger::L10N
 description: <__trans phrase="Add rebuild trigger.">
+system_config_template: rebuildtrigger_config.tmpl
+settings:
+    rebuildtrigger:
 config_settings:
     RebuildMultiBlogAtDeleteEntry:
         default: 1
     FourceBackgroundTasks:
         default: 0
+    RebuildTriggerPluginSetting:
+        default: 0
 callbacks:
+    post_run: $rebuildtrigger::RebuildTrigger::Plugin::_post_run
     cms_post_delete.entry: $rebuildtrigger::RebuildTrigger::Plugin::_cms_post_delete_entry
 tags:
+    block:
+        IfRebuildTriggerPluginSetting?: RebuildTrigger::Plugin::_hdlr_if_setting
     function:
         RebuildBlog: $rebuildtrigger::RebuildTrigger::Plugin::_hdlr_rebuild_blog
         RebuildIndexById: $rebuildtrigger::RebuildTrigger::Plugin::_hdlr_rebuild_indexbyid

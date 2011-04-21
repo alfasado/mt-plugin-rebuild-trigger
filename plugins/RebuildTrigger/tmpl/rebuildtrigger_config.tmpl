@@ -1,0 +1,20 @@
+<MTIfRebuildTriggerPluginSetting>
+<mtapp:setting
+    id="rebuildtrigger_config"
+    label="<__trans phrase="Trigger">">
+<div><__trans phrase="You can write YAML format. Example:"></div>
+<pre>
+Trigger1:
+    params:
+        - __mode=cfg_prefs
+        - _type=blog
+        - saved=1
+    template_id: 1
+</pre>
+<ul>
+<li><textarea style="width:100%" rows="10" id="rebuildtrigger" name="rebuildtrigger"><mt:var name="rebuildtrigger" escape="html"></textarea>
+</li>
+</ul>
+</mtapp:setting><MTElse>
+<div><__trans phrase="To use this, You specify the RebuildTriggerPluginSetting 1 in mt-config.cgi."></div>
+</MTIfRebuildTriggerPluginSetting>

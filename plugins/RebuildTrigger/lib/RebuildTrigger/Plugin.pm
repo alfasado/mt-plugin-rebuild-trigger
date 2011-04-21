@@ -2,6 +2,57 @@ package RebuildTrigger::Plugin;
 
 use strict;
 
+sub _post_run {
+    my $app = MT->instance();
+    return 1 if ( ( ref $app ) ne 'MT::App::CMS' );
+    return 1 if (! MT->config( 'RebuildTriggerPluginSetting' ) );
+    my $query_string = $app->query_string;
+    return 1 unless $query_string;
+    require MT::Request;
+    my $r = MT::Request->instance;
+    return 1 if $r->cache( 'RebuildTriggerDoPlugin' );
+    $r->cache( 'RebuildTriggerDoPlugin', 1 );
+    my $component = MT->component( 'RebuildTrigger' );
+    my $config = $component->get_config_value( 'rebuildtrigger' );
+    require YAML::Tiny;
+    my $tiny = YAML::Tiny->new;
+    my $tiny = YAML::Tiny->read_string( $config ) || die YAML::Tiny->errstr;
+    if ( ref $tiny ne 'YAML::Tiny' ) {
+        $app->log( $component->translate( 'YAML Error \'[_1]\'', $tiny ) );
+    }
+    my $yaml = $tiny->[ 0 ];
+    my @query_params = split( /;/, $query_string );
+    my @template_ids;
+    my $counter = 1;
+    for my $key ( keys %$yaml ) {
+        my $params = $yaml->{ $key }->{ params };
+        my $template_id = $yaml->{ $key }->{ template_id };
+        next if (! $template_id );
+        next if (! $params );
+        $counter++;
+        my $rebuild = 1;
+        if ( ( ref $params ) eq 'ARRAY' ) {
+            for my $param ( @$params ) {
+                if (! grep( /^$param$/, @query_params ) ) {
+                    $rebuild = 0;
+                    next;
+                }
+            }
+        } else {
+            if ( $query_string eq $params ) {
+                $rebuild = 1;
+            }
+        }
+        if ( $rebuild ) {
+            push ( @template_ids, $template_id );
+        }
+    }
+    if ( @template_ids ) {
+        __rebuild_templates( @template_ids );
+    }
+    return 1;
+}
+
 sub _cms_post_delete_entry {
     my ( $cb, $app, $obj ) = @_;
     return 1 if (! MT->config( 'RebuildMultiBlogAtDeleteEntry' ) );
@@ -76,6 +127,26 @@ sub _hdlr_rebuild_indexbyid {
     my $r = MT::Request->instance;
     my @template_ids = split( /\,/, $template_id );
     @template_ids = map { $_ =~ s/\s//g; $_; } @template_ids;
+    __rebuild_templates( @template_ids );
+    return '';
+}
+
+sub _hdlr_if_setting {
+    my ( $ctx, $args, $cond ) = @_;
+    return 1 if ( MT->config( 'RebuildTriggerPluginSetting' ) );
+    return 0;
+}
+
+sub _hdlr_rebuild_indexbyblogid {
+    my ( $ctx, $args, $cond ) = @_;
+    $args->{ ArchiveType } = 'Index';
+    return _hdlr_rebuild_blog( $ctx, $args, $cond );
+}
+
+sub __rebuild_templates {
+    my @template_ids = @_;
+    require MT::Request;
+    my $r = MT::Request->instance;
     require MT::Template;
     my @templates = MT::Template->load( { id => \@template_ids } );
     return '' unless @templates;
@@ -89,13 +160,6 @@ sub _hdlr_rebuild_indexbyid {
         }
         $r->cache( 'rebuildtrigger-rebuild-template_id:' . $template->id, 1 );
     }
-    return '';
-}
-
-sub _hdlr_rebuild_indexbyblogid {
-    my ( $ctx, $args, $cond ) = @_;
-    $args->{ ArchiveType } = 'Index';
-    return _hdlr_rebuild_blog( $ctx, $args, $cond );
 }
 
 sub force_background_task {

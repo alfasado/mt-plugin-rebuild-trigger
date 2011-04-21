@@ -16,7 +16,7 @@ sub _post_run {
     my $config = $component->get_config_value( 'rebuildtrigger' );
     require YAML::Tiny;
     my $tiny = YAML::Tiny->new;
-    my $tiny = YAML::Tiny->read_string( $config ) || die YAML::Tiny->errstr;
+    $tiny = YAML::Tiny->read_string( $config ) || die YAML::Tiny->errstr;
     if ( ref $tiny ne 'YAML::Tiny' ) {
         $app->log( $component->translate( 'YAML Error \'[_1]\'', $tiny ) );
     }

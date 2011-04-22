@@ -62,7 +62,7 @@ sub _post_run {
                             push ( @archive_types, $type );
                         }
                     } else {
-                        push ( @blog_ids, $blog_id );
+                        push ( @archive_types, $archive_type );
                     }
                 }
             } elsif ( $template_id ) {

@@ -14,22 +14,25 @@ sub _post_run {
     $r->cache( 'RebuildTriggerDoPlugin', 1 );
     my $component = MT->component( 'RebuildTrigger' );
     my $config = $component->get_config_value( 'rebuildtrigger' );
+    return 1 unless $config;
+    $config .= "\n";
     require YAML::Tiny;
     my $tiny = YAML::Tiny->new;
-    $tiny = YAML::Tiny->read_string( $config ) || die YAML::Tiny->errstr;
+    $tiny = YAML::Tiny->read_string( $config ) || YAML::Tiny->errstr;
     if ( ref $tiny ne 'YAML::Tiny' ) {
         $app->log( $component->translate( 'YAML Error \'[_1]\'', $tiny ) );
     }
     my $yaml = $tiny->[ 0 ];
     my @query_params = split( /;/, $query_string );
     my @template_ids;
-    my $counter = 1;
+    my @blog_ids;
+    my @archive_types;
     for my $key ( keys %$yaml ) {
         my $params = $yaml->{ $key }->{ params };
         my $template_id = $yaml->{ $key }->{ template_id };
-        next if (! $template_id );
+        my $blog_id = $yaml->{ $key }->{ blog_id };
+        next if ( (! $template_id ) && (! $blog_id ) );
         next if (! $params );
-        $counter++;
         my $rebuild = 1;
         if ( ( ref $params ) eq 'ARRAY' ) {
             for my $param ( @$params ) {
@@ -44,8 +47,54 @@ sub _post_run {
             }
         }
         if ( $rebuild ) {
-            push ( @template_ids, $template_id );
+            if ( $blog_id ) {
+                if ( ( ref $blog_id ) eq 'ARRAY' ) {
+                    for my $id ( @$blog_id ) {
+                        push ( @blog_ids, $id );
+                    }
+                } else {
+                    push ( @blog_ids, $blog_id );
+                }
+                my $archive_type = $yaml->{ $key }->{ archive_type };
+                if ( $archive_type ) {
+                    if ( ( ref $archive_type ) eq 'ARRAY' ) {
+                        for my $type ( @$archive_type ) {
+                            push ( @archive_types, $type );
+                        }
+                    } else {
+                        push ( @blog_ids, $blog_id );
+                    }
+                }
+            } elsif ( $template_id ) {
+                if ( ( ref $template_id ) eq 'ARRAY' ) {
+                    for my $id ( @$template_id ) {
+                        push ( @template_ids, $id );
+                    }
+                } else {
+                    push ( @template_ids, $template_id );
+                }
+            }
         }
+    }
+    if ( @blog_ids ) {
+        require MT::Template::Tags::Filters;
+        require MT::Template;
+        require MT::Builder;
+        require MT::Template::Context;
+        my $ctx = MT::Template::Context->new;
+        my $builder = MT::Builder->new;
+        $ctx->stash( 'builder', $builder );
+        if ( my $blog = $app->blog ) {
+            $ctx->stash( 'blog', $blog );
+        }
+        my @build_ids;
+        for my $id ( @blog_ids ) {
+            if ( $id =~ /mt/i ) {
+                $id = MT::Template::Tags::Filters::_fltr_mteval( $id, 1, $ctx );
+            }
+            push ( @build_ids, $id );
+        }
+        __rebuild_blogs( \@build_ids, \@archive_types );
     }
     if ( @template_ids ) {
         __rebuild_templates( @template_ids );
@@ -77,6 +126,7 @@ sub _hdlr_rebuild_blog {
         }
     }
     my $blog_id = $args->{ blog_id };
+    $blog_id = $args->{ id } if (! $blog_id );
     $blog_id = $args->{ blog_ids } if (! $blog_id );
     my $archivetype = $args->{ ArchiveType };
     $archivetype = $args->{ archivetype } if (! $archivetype );
@@ -92,23 +142,7 @@ sub _hdlr_rebuild_blog {
     my @blog_ids = split( /\,/, $blog_id );
     @blog_ids = map { $_ =~ s/\s//g; $_; } @blog_ids;
     return '' unless @blog_ids;
-    require MT::WeblogPublisher;
-    my $pub = MT::WeblogPublisher->new;
-    for my $id ( @blog_ids ) {
-        if ( @ats ) {
-            for my $archive_type ( @ats ) {
-                next if ( $r->cache( 'rebuildtrigger-rebuild-blog_id:' . $id . ':' . $archive_type ) );
-                force_background_task( sub
-                    { $pub->rebuild( BlogID => $id, ArchiveType => $archive_type ); } );
-                $r->cache( 'rebuildtrigger-rebuild-blog_id:' . $id . ':' . $archive_type, 1 );
-            }
-        } else {
-            next if ( $r->cache( 'rebuildtrigger-rebuild-blog_id:' . $id ) );
-            force_background_task( sub
-                    { $pub->rebuild( BlogID => $id ); } );
-            $r->cache( 'rebuildtrigger-rebuild-blog_id:' . $id, 1 );
-        }
-    }
+    return __rebuild_blogs( \@blog_ids, \@ats );
     return '';
 }
 
@@ -122,7 +156,9 @@ sub _hdlr_rebuild_indexbyid {
         }
     }
     my $template_id = $args->{ template_id };
+    $template_id = $args->{ id } if (! $template_id );
     $template_id = $args->{ template_ids } if (! $template_id );
+    return '' unless $template_id;
     require MT::Request;
     my $r = MT::Request->instance;
     my @template_ids = split( /\,/, $template_id );
@@ -162,9 +198,33 @@ sub __rebuild_templates {
     }
 }
 
+sub __rebuild_blogs {
+    my ( $blog_ids, $ats ) = @_;
+    require MT::Request;
+    my $r = MT::Request->instance;
+    require MT::WeblogPublisher;
+    my $pub = MT::WeblogPublisher->new;
+    for my $id ( @$blog_ids ) {
+        if ( @$ats ) {
+            for my $archive_type ( @$ats ) {
+                next if ( $r->cache( 'rebuildtrigger-rebuild-blog_id:' . $id . ':' . $archive_type ) );
+                force_background_task( sub
+                    { $pub->rebuild( BlogID => $id, ArchiveType => $archive_type ); } );
+                $r->cache( 'rebuildtrigger-rebuild-blog_id:' . $id . ':' . $archive_type, 1 );
+            }
+        } else {
+            next if ( $r->cache( 'rebuildtrigger-rebuild-blog_id:' . $id ) );
+            force_background_task( sub
+                    { $pub->rebuild( BlogID => $id ); } );
+            $r->cache( 'rebuildtrigger-rebuild-blog_id:' . $id, 1 );
+        }
+    }
+    return '';
+}
+
 sub force_background_task {
     my $app = MT->instance();
-    my $fource = $app->config->FourceBackgroundTasks;
+    my $fource = $app->config->RebuildTriggerBackgroundTasks;
     if ( ( $fource ) && (! $ENV{ FAST_CGI } ) ) {
         my $default = $app->config->LaunchBackgroundTasks;
         $app->config( 'LaunchBackgroundTasks', 1 );

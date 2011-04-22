@@ -9,10 +9,18 @@ Trigger1:
         - __mode=cfg_prefs
         - _type=blog
         - saved=1
-    template_id: 1
+    template_id:
+        - 1
+        - 2
+Trigger2:
+    params:
+        - __mode=list_entry
+        - is_power_edit=1
+        - saved=1
+    blog_id: &lt;mt:BlogId&gt;
 </pre>
 <ul>
-<li><textarea style="width:100%" rows="10" id="rebuildtrigger" name="rebuildtrigger"><mt:var name="rebuildtrigger" escape="html"></textarea>
+<li><textarea rows="10" id="rebuildtrigger" name="rebuildtrigger"><mt:var name="rebuildtrigger" escape="html"></textarea>
 </li>
 </ul>
 </mtapp:setting><MTElse>

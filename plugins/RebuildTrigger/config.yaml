@@ -1,7 +1,7 @@
 id  : RebuildTrigger
 key : rebuildtrigger
 name: Rebuild Trigger
-version: 0.2
+version: 0.3
 author_name: Alfasado Inc.
 author_link: http://alfasado.net/
 l10n_class: RebuildTrigger::L10N
@@ -12,10 +12,10 @@ settings:
 config_settings:
     RebuildMultiBlogAtDeleteEntry:
         default: 1
-    FourceBackgroundTasks:
-        default: 0
+    RebuildTriggerBackgroundTasks:
+        default: 1
     RebuildTriggerPluginSetting:
-        default: 0
+        default: 1
 callbacks:
     post_run: $rebuildtrigger::RebuildTrigger::Plugin::_post_run
     cms_post_delete.entry: $rebuildtrigger::RebuildTrigger::Plugin::_cms_post_delete_entry

@@ -112,7 +112,7 @@ sub _cms_post_delete_entry {
     return 1 if $r->cache( 'rebuildtrigger-multiblog:' . $obj->blog_id );
     $r->cache( 'rebuildtrigger-multiblog:' . $obj->blog_id, 1 );
     force_background_task( sub
-                { MultiBlog::post_entry_save( $plugin, @_ ); } );
+                { require MultiBlog; MultiBlog::post_entry_save( $plugin, $cb, $app, $obj ); } );
     return 1;
 }
 

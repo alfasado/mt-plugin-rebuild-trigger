@@ -208,8 +208,13 @@ sub __rebuild_blogs {
         if ( @$ats ) {
             for my $archive_type ( @$ats ) {
                 next if ( $r->cache( 'rebuildtrigger-rebuild-blog_id:' . $id . ':' . $archive_type ) );
-                force_background_task( sub
-                    { $pub->rebuild( BlogID => $id, ArchiveType => $archive_type ); } );
+                if ( $archive_type ne 'index' ) {
+                    force_background_task( sub
+                        { $pub->rebuild( BlogID => $id, ArchiveType => $archive_type, NoIndexes => 1 ); } );
+                } else {
+                    force_background_task( sub
+                        { $pub->rebuild_indexes( BlogID => $id, Force => 1, ); } );
+                }
                 $r->cache( 'rebuildtrigger-rebuild-blog_id:' . $id . ':' . $archive_type, 1 );
             }
         } else {

@@ -8,10 +8,8 @@ sub _post_run {
     return 1 if (! MT->config( 'RebuildTriggerPluginSetting' ) );
     my $query_string = $app->query_string;
     return 1 unless $query_string;
-    require MT::Request;
-    my $r = MT::Request->instance;
-    return 1 if $r->cache( 'RebuildTriggerDoPlugin' );
-    $r->cache( 'RebuildTriggerDoPlugin', 1 );
+    return 1 if MT->request( 'RebuildTriggerDoPlugin' );
+    MT->request( 'RebuildTriggerDoPlugin', 1 );
     my $component = MT->component( 'RebuildTrigger' );
     my $config = $component->get_config_value( 'rebuildtrigger' );
     return 1 unless $config;
@@ -97,7 +95,17 @@ sub _post_run {
         __rebuild_blogs( \@build_ids, \@archive_types );
     }
     if ( @template_ids ) {
-        __rebuild_templates( @template_ids );
+        __rebuild_templates( \@template_ids );
+    }
+    return 1;
+}
+
+sub _cms_post_delete_page {
+    my ( $cb, $app, $obj, $original ) = @_;
+    return 1 if (! MT->config( 'RebuildIndexAtDeletePage' ) );
+    if ( $obj->status == 2 ) {
+        force_background_task( sub {
+            $app->rebuild_indexes( BlogID => $obj->blog_id, Force => 1 ) } );
     }
     return 1;
 }
@@ -105,12 +113,10 @@ sub _post_run {
 sub _cms_post_delete_entry {
     my ( $cb, $app, $obj ) = @_;
     return 1 if (! MT->config( 'RebuildMultiBlogAtDeleteEntry' ) );
-    require MT::Request;
-    my $r = MT::Request->instance;
     my $plugin = MT->component( 'MultiBlog' );
     return unless $plugin;
-    return 1 if $r->cache( 'rebuildtrigger-multiblog:' . $obj->blog_id );
-    $r->cache( 'rebuildtrigger-multiblog:' . $obj->blog_id, 1 );
+    # return 1 if MT->request( 'rebuildtrigger-multiblog:' . $obj->blog_id );
+    # MT->request( 'rebuildtrigger-multiblog:' . $obj->blog_id, 1 );
     force_background_task( sub
                 { require MultiBlog; MultiBlog::post_entry_save( $plugin, $cb, $app, $obj ); } );
     return 1;
@@ -118,16 +124,23 @@ sub _cms_post_delete_entry {
 
 sub _hdlr_rebuild {
     my ( $ctx, $args, $cond ) = @_;
+    my $app = MT->instance;
+    if ( ref ( $app ) eq 'MT::App::CMS' ) {
+        my $mode = $app->mode;
+        if ( $mode && ( $mode =~ /preview/ ) ) {
+            return;
+        }
+    }
     my $url = $args->{ url };
     my $blog_id = $args->{ blog_id };
     my $blog = $ctx->stash( 'blog' );
+    my $need_result = $args->{ need_result };
     if ( $blog_id ) {
         require MT::Blog;
         $blog = MT::Blog->load( $blog_id );
         $ctx->stash( 'blog', $blog );
         $ctx->stash( 'blog_id', $blog_id );
     }
-    my $app = MT->instance;
     if (! $blog ) {
         if ( ref( $app ) =~ /^MT::App::/ ) {
             $blog = $app->blog;
@@ -138,68 +151,46 @@ sub _hdlr_rebuild {
     }
     $blog_id = $blog->id;
     if ( $url ) {
-        my $blog_url = $blog->site_url;
-        $blog_url =~ s!/$!!;
         if ( $url =~ m!^https{0,1}://! ) {
+            my $blog_url = $blog->site_url;
+            $blog_url =~ s!/$!!;
             $blog_url =~ s!(^https{0,1}://.*?)/.*$!$1!;
             my $search = quotemeta( $blog_url );
             $url =~ s/^$search//;
-            require MT::FileInfo;
-            my $fi = MT::FileInfo->load( { blog_id => $blog_id,
-                                           url => $url } );
-            if (! $fi ) {
+        }
+        if ( $url =~ m!/$! ) {
+            my $index = MT->config( 'IndexBasename' ) . '.' . $blog->file_extension;
+            $url .= $index;
+        }
+        if (! $args->{ force } ) {
+            my $key = 'rebuildtrigger-rebuild-url:' . $blog_id . ':' . $url;
+            if ( MT->request( $key ) ) {
                 return '';
             }
-            require MT::WeblogPublisher;
-            my $pub = MT::WeblogPublisher->new;
-            $pub->rebuild_from_fileinfo( $fi ) || die $pub->errstr;
+            MT->request( $key, 1 );
         }
-    }
-    my $template_id = $args->{ template_id };
-    my $archive_type = $args->{ archive_type };
-    my @template_ids;
-    my @blog_ids;
-    my @archive_types;
-    if ( $args->{ template_ids } ) {
-        @template_ids = split( /,/, $args->{ template_ids } );
-    } else {
-        push ( @template_ids, $template_id ) if $template_id;
-    }
-    if ( $args->{ blog_ids } ) {
-        @blog_ids = split( /,/, $args->{ blog_ids } );
-    } else {
-        push ( @blog_ids, $blog_id );
-    }
-    if ( $args->{ archive_types } ) {
-        @archive_types = split( /,/, $args->{ archive_types } );
-    } else {
-        push ( @archive_types, $archive_type );
-    }
-    if ( @blog_ids ) {
-        my @build_ids;
-        for my $id ( @blog_ids ) {
-            push ( @build_ids, $id );
+        require MT::FileInfo;
+        my $fi = MT::FileInfo->load( { blog_id => $blog_id,
+                                       url => $url } );
+        if (! $fi ) {
+            return '';
         }
-        __rebuild_blogs( \@build_ids, \@archive_types );
+        require MT::WeblogPublisher;
+        my $pub = MT::WeblogPublisher->new;
+        $pub->rebuild_from_fileinfo( $fi ) || die $pub->errstr;
+        return 1 if $need_result;
+        return '';
     }
-    if ( @template_ids ) {
-        __rebuild_templates( @template_ids );
-    }
-    if ( my $need_result = $args->{ need_result } ) {
-        return 1;
+    $args->{ need_result } = 1;
+    if ( _hdlr_rebuild_blog( @_ ) || _hdlr_rebuild_indexbyid( @_ ) ) {
+        return 1 if $need_result;
     }
     return '';
 }
 
 sub _hdlr_rebuild_blog {
     my ( $ctx, $args, $cond ) = @_;
-    my $app = MT->instance;
-    if ( ref ( $app ) eq 'MT::App::CMS' ) {
-        my $mode = $app->mode;
-        if ( $mode && ( $mode =~ /preview/ ) ) {
-            return;
-        }
-    }
+    my $need_result = $args->{ need_result };
     my $blog_id = $args->{ blog_id };
     $blog_id = $args->{ id } if (! $blog_id );
     $blog_id = $args->{ blog_ids } if (! $blog_id );
@@ -212,33 +203,29 @@ sub _hdlr_rebuild_blog {
         @ats = split( /\,/, $archivetype );
         @ats = map { $_ =~ s/\s//g; $_; } @ats;
     }
-    require MT::Request;
-    my $r = MT::Request->instance;
     my @blog_ids = split( /\,/, $blog_id );
     @blog_ids = map { $_ =~ s/\s//g; $_; } @blog_ids;
     return '' unless @blog_ids;
-    return __rebuild_blogs( \@blog_ids, \@ats );
+    my $do = __rebuild_blogs( \@blog_ids, \@ats );
+    if ( $need_result ) {
+        return $do;
+    }
     return '';
 }
 
 sub _hdlr_rebuild_indexbyid {
     my ( $ctx, $args, $cond ) = @_;
-    my $app = MT->instance;
-    if ( ref ( $app ) eq 'MT::App::CMS' ) {
-        my $mode = $app->mode;
-        if ( $mode && ( $mode =~ /preview/ ) ) {
-            return;
-        }
-    }
+    my $need_result = $args->{ need_result };
     my $template_id = $args->{ template_id };
     $template_id = $args->{ id } if (! $template_id );
     $template_id = $args->{ template_ids } if (! $template_id );
     return '' unless $template_id;
-    require MT::Request;
-    my $r = MT::Request->instance;
     my @template_ids = split( /\,/, $template_id );
     @template_ids = map { $_ =~ s/\s//g; $_; } @template_ids;
-    __rebuild_templates( @template_ids );
+    my $do = __rebuild_templates( \@template_ids, $args->{ force } ? 1 : 0 );
+    if ( $need_result ) {
+        return $do;
+    }
     return '';
 }
 
@@ -262,51 +249,64 @@ sub __rebuild_templates {
             return;
         }
     }
-    my @template_ids = @_;
-    require MT::Request;
-    my $r = MT::Request->instance;
+    my ( $template_ids, $force ) = @_;
+    return unless $template_ids;
+    return unless ref( $template_ids ) eq 'ARRAY';
+    my @template_ids = @$template_ids;
     require MT::Template;
     my @templates = MT::Template->load( { id => \@template_ids } );
     return '' unless @templates;
     require MT::WeblogPublisher;
     my $pub = MT::WeblogPublisher->new;
+    my $do;
     for my $template ( @templates ) {
-        next if ( $r->cache( 'rebuildtrigger-rebuild-template_id:' . $template->id ) );
+        next if ( MT->request( 'rebuildtrigger-rebuild-template_id:' . $template->id ) ) && ! $force;
         if ( my $blog_id = $template->blog_id ) {
+            $do = 1;
             force_background_task( sub
                 { $pub->rebuild_indexes( BlogID => $blog_id, Template => $template, Force => 1, ); } );
         }
-        $r->cache( 'rebuildtrigger-rebuild-template_id:' . $template->id, 1 );
+        MT->request( 'rebuildtrigger-rebuild-template_id:' . $template->id, 1 );
     }
+    return $do;
 }
 
 sub __rebuild_blogs {
     my ( $blog_ids, $ats ) = @_;
-    require MT::Request;
-    my $r = MT::Request->instance;
+    my $app = MT->instance;
+    if ( ref ( $app ) eq 'MT::App::CMS' ) {
+        my $mode = $app->mode;
+        if ( $mode && ( $mode =~ /preview/ ) ) {
+            return;
+        }
+    }
+    my $do;
     require MT::WeblogPublisher;
     my $pub = MT::WeblogPublisher->new;
     for my $id ( @$blog_ids ) {
         if ( @$ats ) {
             for my $archive_type ( @$ats ) {
-                next if ( $r->cache( 'rebuildtrigger-rebuild-blog_id:' . $id . ':' . $archive_type ) );
+                next if ( MT->request( 'rebuildtrigger-rebuild-blog_id:' . $id . ':' . $archive_type ) );
                 if ( $archive_type ne 'index' ) {
+                    $do = 1;
                     force_background_task( sub
                         { $pub->rebuild( BlogID => $id, ArchiveType => $archive_type, NoIndexes => 1 ); } );
                 } else {
+                    $do = 1;
                     force_background_task( sub
                         { $pub->rebuild_indexes( BlogID => $id, Force => 1, ); } );
                 }
-                $r->cache( 'rebuildtrigger-rebuild-blog_id:' . $id . ':' . $archive_type, 1 );
+                MT->request( 'rebuildtrigger-rebuild-blog_id:' . $id . ':' . $archive_type, 1 );
             }
         } else {
-            next if ( $r->cache( 'rebuildtrigger-rebuild-blog_id:' . $id ) );
+            next if ( MT->request( 'rebuildtrigger-rebuild-blog_id:' . $id ) );
+            $do = 1;
             force_background_task( sub
                     { $pub->rebuild( BlogID => $id ); } );
-            $r->cache( 'rebuildtrigger-rebuild-blog_id:' . $id, 1 );
+            MT->request( 'rebuildtrigger-rebuild-blog_id:' . $id, 1 );
         }
     }
-    return '';
+    return $do;
 }
 
 sub force_background_task {

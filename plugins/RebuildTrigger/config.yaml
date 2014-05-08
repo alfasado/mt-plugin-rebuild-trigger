@@ -1,7 +1,7 @@
 id  : RebuildTrigger
 key : rebuildtrigger
 name: Rebuild Trigger
-version: 0.4
+version: 0.5
 author_name: Alfasado Inc.
 author_link: http://alfasado.net/
 l10n_class: RebuildTrigger::L10N

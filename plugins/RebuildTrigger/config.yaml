@@ -10,6 +10,8 @@ system_config_template: rebuildtrigger_config.tmpl
 settings:
     rebuildtrigger:
 config_settings:
+    RebuildIndexAtDeletePage:
+        default: 1
     RebuildMultiBlogAtDeleteEntry:
         default: 1
     RebuildTriggerBackgroundTasks:
@@ -19,7 +21,11 @@ config_settings:
 callbacks:
     post_run: $rebuildtrigger::RebuildTrigger::Plugin::_post_run
     cms_post_delete.entry: $rebuildtrigger::RebuildTrigger::Plugin::_cms_post_delete_entry
-    cms_post_delete.page: $rebuildtrigger::RebuildTrigger::Plugin::_cms_post_delete_entry
+    cms_post_delete.page:
+        - handler: $rebuildtrigger::RebuildTrigger::Plugin::_cms_post_delete_entry
+        - handler: $rebuildtrigger::RebuildTrigger::Plugin::_cms_post_delete_page
+    unpublish_past_entries:
+        - handler: $rebuildtrigger::RebuildTrigger::Plugin::_cms_post_delete_entry
 tags:
     block:
         IfRebuildTriggerPluginSetting?: RebuildTrigger::Plugin::_hdlr_if_setting
@@ -28,4 +34,3 @@ tags:
         RebuildIndexById: $rebuildtrigger::RebuildTrigger::Plugin::_hdlr_rebuild_indexbyid
         RebuildIndexByBlogId: $rebuildtrigger::RebuildTrigger::Plugin::_hdlr_rebuild_indexbyblogid
         Rebuild: $rebuildtrigger::RebuildTrigger::Plugin::_hdlr_rebuild
-

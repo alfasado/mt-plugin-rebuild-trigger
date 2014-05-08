@@ -1,7 +1,7 @@
 id  : RebuildTrigger
 key : rebuildtrigger
 name: Rebuild Trigger
-version: 0.3
+version: 0.4
 author_name: Alfasado Inc.
 author_link: http://alfasado.net/
 l10n_class: RebuildTrigger::L10N
@@ -19,6 +19,7 @@ config_settings:
 callbacks:
     post_run: $rebuildtrigger::RebuildTrigger::Plugin::_post_run
     cms_post_delete.entry: $rebuildtrigger::RebuildTrigger::Plugin::_cms_post_delete_entry
+    cms_post_delete.page: $rebuildtrigger::RebuildTrigger::Plugin::_cms_post_delete_entry
 tags:
     block:
         IfRebuildTriggerPluginSetting?: RebuildTrigger::Plugin::_hdlr_if_setting
@@ -26,4 +27,5 @@ tags:
         RebuildBlog: $rebuildtrigger::RebuildTrigger::Plugin::_hdlr_rebuild_blog
         RebuildIndexById: $rebuildtrigger::RebuildTrigger::Plugin::_hdlr_rebuild_indexbyid
         RebuildIndexByBlogId: $rebuildtrigger::RebuildTrigger::Plugin::_hdlr_rebuild_indexbyblogid
+        Rebuild: $rebuildtrigger::RebuildTrigger::Plugin::_hdlr_rebuild
 

@@ -116,6 +116,81 @@ sub _cms_post_delete_entry {
     return 1;
 }
 
+sub _hdlr_rebuild {
+    my ( $ctx, $args, $cond ) = @_;
+    my $url = $args->{ url };
+    my $blog_id = $args->{ blog_id };
+    my $blog = $ctx->stash( 'blog' );
+    if ( $blog_id ) {
+        require MT::Blog;
+        $blog = MT::Blog->load( $blog_id );
+        $ctx->stash( 'blog', $blog );
+        $ctx->stash( 'blog_id', $blog_id );
+    }
+    my $app = MT->instance;
+    if (! $blog ) {
+        if ( ref( $app ) =~ /^MT::App::/ ) {
+            $blog = $app->blog;
+        }
+        if (! $blog ) {
+            return $ctx->error( MT->translate( 'No [_1] could be found.', 'Blog' ) );
+        }
+    }
+    $blog_id = $blog->id;
+    if ( $url ) {
+        my $blog_url = $blog->site_url;
+        $blog_url =~ s!/$!!;
+        if ( $url =~ m!^https{0,1}://! ) {
+            $blog_url =~ s!(^https{0,1}://.*?)/.*$!$1!;
+            my $search = quotemeta( $blog_url );
+            $url =~ s/^$search//;
+            require MT::FileInfo;
+            my $fi = MT::FileInfo->load( { blog_id => $blog_id,
+                                           url => $url } );
+            if (! $fi ) {
+                return '';
+            }
+            require MT::WeblogPublisher;
+            my $pub = MT::WeblogPublisher->new;
+            $pub->rebuild_from_fileinfo( $fi ) || die $pub->errstr;
+        }
+    }
+    my $template_id = $args->{ template_id };
+    my $archive_type = $args->{ archive_type };
+    my @template_ids;
+    my @blog_ids;
+    my @archive_types;
+    if ( $args->{ template_ids } ) {
+        @template_ids = split( /,/, $args->{ template_ids } );
+    } else {
+        push ( @template_ids, $template_id ) if $template_id;
+    }
+    if ( $args->{ blog_ids } ) {
+        @blog_ids = split( /,/, $args->{ blog_ids } );
+    } else {
+        push ( @blog_ids, $blog_id );
+    }
+    if ( $args->{ archive_types } ) {
+        @archive_types = split( /,/, $args->{ archive_types } );
+    } else {
+        push ( @archive_types, $archive_type );
+    }
+    if ( @blog_ids ) {
+        my @build_ids;
+        for my $id ( @blog_ids ) {
+            push ( @build_ids, $id );
+        }
+        __rebuild_blogs( \@build_ids, \@archive_types );
+    }
+    if ( @template_ids ) {
+        __rebuild_templates( @template_ids );
+    }
+    if ( my $need_result = $args->{ need_result } ) {
+        return 1;
+    }
+    return '';
+}
+
 sub _hdlr_rebuild_blog {
     my ( $ctx, $args, $cond ) = @_;
     my $app = MT->instance;
@@ -180,6 +255,13 @@ sub _hdlr_rebuild_indexbyblogid {
 }
 
 sub __rebuild_templates {
+    my $app = MT->instance;
+    if ( ref ( $app ) eq 'MT::App::CMS' ) {
+        my $mode = $app->mode;
+        if ( $mode && ( $mode =~ /preview/ ) ) {
+            return;
+        }
+    }
     my @template_ids = @_;
     require MT::Request;
     my $r = MT::Request->instance;

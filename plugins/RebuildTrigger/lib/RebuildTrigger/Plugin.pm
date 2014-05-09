@@ -237,7 +237,7 @@ sub _hdlr_if_setting {
 
 sub _hdlr_rebuild_indexbyblogid {
     my ( $ctx, $args, $cond ) = @_;
-    $args->{ ArchiveType } = 'Index';
+    $args->{ ArchiveType } = 'index';
     return _hdlr_rebuild_blog( $ctx, $args, $cond );
 }
 
